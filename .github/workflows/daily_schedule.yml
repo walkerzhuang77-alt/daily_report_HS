@@ -44,3 +44,14 @@ jobs:
           name: Strategy-Report-${{ github.run_id }}
           path: Strategy_*.md
           retention-days: 5
+- name: 检出代码 (Checkout)
+        uses: actions/checkout@v4
+
+      # 🔴 在这里插入这三行，用来调试
+      - name: 调试 - 列出所有文件
+        run: |
+          ls -R
+      # ---------------------------
+
+      - name: 安装 Python 3.10
+        ...
