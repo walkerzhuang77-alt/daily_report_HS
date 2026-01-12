@@ -1,0 +1,46 @@
+name: A股智能交易员 (双时段)
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC 时间 (北京时间 - 8小时)
+    # 1. 北京时间 11:30 AM -> UTC 03:30
+    - cron: '30 3 * * *'
+    # 2. 北京时间 15:00 PM -> UTC 07:00
+    - cron: '0 7 * * *'
+  
+  # 允许你手动点击按钮随时触发测试
+  workflow_dispatch:
+
+jobs:
+  run_analysis:
+    runs-on: ubuntu-latest
+    # 设置时区为上海，确保生成的报告里 print 的时间是北京时间
+    env:
+      TZ: Asia/Shanghai
+
+    steps:
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 安装 Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖库
+        run: |
+          pip install -r requirements.txt
+
+      - name: 运行 AI 交易员脚本
+        env:
+          # 这里把你在 GitHub 设置的 Secret 注入到环境变量中
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python daily_report.py
+
+      - name: 保存研报为附件 (Artifact)
+        # 这样你可以在 Actions 页面下载生成的 .md 文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: Strategy-Report-${{ github.run_id }}
+          path: Strategy_*.md
+          retention-days: 5
