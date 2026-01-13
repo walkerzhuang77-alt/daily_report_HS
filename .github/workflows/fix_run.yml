@@ -1,4 +1,4 @@
-name: A股自动研报(修复版)
+name: A股自动研报(终极版)
 
 on:
   schedule:
@@ -20,16 +20,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 暴力搜寻并安装依赖
+      # 🔴 核心修改点：不再找文件了，直接在这里强制安装！
+      - name: 强制安装依赖库
         run: |
-          # 无论 requirements.txt 藏在哪里，只要名字对，就安装它
-          find . -name "requirements.txt" -exec pip install -r {} \;
+          echo "正在安装 AkShare 和 Google GenAI..."
+          pip install akshare google-genai pandas requests
 
-      - name: 暴力搜寻并运行脚本
+      - name: 搜寻并运行脚本
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # 无论 daily_report.py 藏在哪里，只要名字对，就运行它
+          # 只要找到 daily_report.py 就运行它
           find . -name "daily_report.py" -exec python {} \;
 
       - name: 上传研报
