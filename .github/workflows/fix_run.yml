@@ -1,0 +1,41 @@
+name: A股自动研报(修复版)
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  run_anywhere:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - name: 下载代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 暴力搜寻并安装依赖
+        run: |
+          # 无论 requirements.txt 藏在哪里，只要名字对，就安装它
+          find . -name "requirements.txt" -exec pip install -r {} \;
+
+      - name: 暴力搜寻并运行脚本
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # 无论 daily_report.py 藏在哪里，只要名字对，就运行它
+          find . -name "daily_report.py" -exec python {} \;
+
+      - name: 上传研报
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Daily-Report
+          path: "**/*.md"
+          retention-days: 5
