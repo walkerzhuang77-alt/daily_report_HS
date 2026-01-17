@@ -1,63 +1,51 @@
-name: 2.0 每日A股复盘 (邮件版)
+name: A股双盘复盘 (午盘+收盘)
 
+# 触发规则：
+# 1. 每天 UTC 03:35 (北京 11:35) -> 午盘
+# 2. 每天 UTC 07:05 (北京 15:05) -> 收盘
+# 3. 手动触发
 on:
   schedule:
-    - cron: '0 9 * * *' # 北京时间 17:00
+    - cron: '35 3 * * 1-5'  # 周一到周五 03:35 (北京 11:35)
+    - cron: '05 7 * * 1-5'  # 周一到周五 07:05 (北京 15:05)
   workflow_dispatch:
 
 jobs:
-  run-report:
+  run-market-report:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 📥 下载代码
+      - name: 📥 拉取代码
         uses: actions/checkout@v3
       
-      - name: 🐍 设置 Python
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
           
-      - name: 📦 安装依赖
+      - name: 📦 安装依赖库
         run: pip install akshare pandas google-generativeai python-dotenv
         
-      - name: 🚀 运行复盘脚本
+      - name: 🚀 启动交易员脚本
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_ACTIONS: "true"
         run: python daily_report.py
         
-      # 👇 新增步骤 1: 把生成的文件改个固定的名字 (方便发邮件)
       - name: 🔄 重命名报告
-        run: mv Strategy_*.md report.md
+        run: |
+          # 找到刚才生成的 md 文件并重命名为 report.md 方便发送
+          mv Strategy_*.md report.md
 
-      # 👇 新增步骤 2: 发送邮件
       - name: 📧 推送到邮箱
         uses: dawidd6/action-send-mail@v3
         with:
-          # 邮件服务器配置 (这里以 Gmail 为例，如果是 QQ/163 请自行修改)
-          server_address: smtp.gmail.com
+          server_address: smtp.gmail.com # 如果是QQ请改 smtp.qq.com
           server_port: 465
           secure: true
-          
-          # 账号信息 (从 Secrets 读取)
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          
-          # 邮件内容
-          subject: 📈 A股AI复盘策略报告 (GitHub推送)
+          subject: 📈 A股复盘内参 (${{ github.event.schedule == '35 3 * * 1-5' && '午盘' || '收盘' }})
           to: ${{ secrets.MAIL_TO }}
-          from: GitHub Actions <${{ secrets.MAIL_USERNAME }}>
-          
-          # 直接把报告内容作为邮件正文！
+          from: AI Trader <${{ secrets.MAIL_USERNAME }}>
           body: file://report.md
-          
-          # (可选) 如果你想把 Markdown 文件作为附件发送，取消下面这行的注释
-          # attachments: report.md
-
-      # 👇 这一步保留，方便你在 GitHub 网页也能下载备份
-      - name: 📤 备份存档
-        uses: actions/upload-artifact@v4
-        with:
-          name: 每日策略报告
-          path: report.md
