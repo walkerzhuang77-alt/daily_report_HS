@@ -1,9 +1,8 @@
-name: 2.0 每日A股复盘 (最终版+下载)
+name: 2.0 每日A股复盘 (邮件版)
 
-# 触发条件：每天北京时间 17:00 (UTC 09:00) 或 手动
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * *' # 北京时间 17:00
   workflow_dispatch:
 
 jobs:
@@ -22,16 +21,43 @@ jobs:
       - name: 📦 安装依赖
         run: pip install akshare pandas google-generativeai python-dotenv
         
-      - name: 🚀 运行复盘
+      - name: 🚀 运行复盘脚本
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_ACTIONS: "true"
         run: python daily_report.py
         
-      # 👇👇👇 新增了这一步 👇👇👇
-      - name: 📤 打包并上传报告
+      # 👇 新增步骤 1: 把生成的文件改个固定的名字 (方便发邮件)
+      - name: 🔄 重命名报告
+        run: mv Strategy_*.md report.md
+
+      # 👇 新增步骤 2: 发送邮件
+      - name: 📧 推送到邮箱
+        uses: dawidd6/action-send-mail@v3
+        with:
+          # 邮件服务器配置 (这里以 Gmail 为例，如果是 QQ/163 请自行修改)
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          
+          # 账号信息 (从 Secrets 读取)
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          
+          # 邮件内容
+          subject: 📈 A股AI复盘策略报告 (GitHub推送)
+          to: ${{ secrets.MAIL_TO }}
+          from: GitHub Actions <${{ secrets.MAIL_USERNAME }}>
+          
+          # 直接把报告内容作为邮件正文！
+          body: file://report.md
+          
+          # (可选) 如果你想把 Markdown 文件作为附件发送，取消下面这行的注释
+          # attachments: report.md
+
+      # 👇 这一步保留，方便你在 GitHub 网页也能下载备份
+      - name: 📤 备份存档
         uses: actions/upload-artifact@v4
         with:
           name: 每日策略报告
-          path: Strategy_*.md
-          # retention-days: 5  # (可选) 文件保留5天
+          path: report.md
