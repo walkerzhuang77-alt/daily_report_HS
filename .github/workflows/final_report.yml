@@ -1,4 +1,4 @@
-name: 2.0 每日A股复盘 (最终版)
+name: 2.0 每日A股复盘 (最终版+下载)
 
 # 触发条件：每天北京时间 17:00 (UTC 09:00) 或 手动
 on:
@@ -20,12 +20,18 @@ jobs:
           python-version: '3.9'
           
       - name: 📦 安装依赖
-        # 这里自动安装依赖，不用你自己传 requirements.txt
         run: pip install akshare pandas google-generativeai python-dotenv
         
       - name: 🚀 运行复盘
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GITHUB_ACTIONS: "true"
-        # 注意：这里改成了 python daily_report.py，因为我们刚才把文件传到了最外面
         run: python daily_report.py
+        
+      # 👇👇👇 新增了这一步 👇👇👇
+      - name: 📤 打包并上传报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: 每日策略报告
+          path: Strategy_*.md
+          # retention-days: 5  # (可选) 文件保留5天
