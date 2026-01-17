@@ -6,174 +6,233 @@ import traceback
 from dotenv import load_dotenv
 
 # ==========================================
-# 0. 智能网络配置 (关键修改！🚀)
+# 0. 智能网络配置
 # ==========================================
-# 自动判断是在 GitHub 服务器还是在你的 Mac 上
 if os.getenv("GITHUB_ACTIONS") == "true":
-    print("🚀 检测到 GitHub Actions 环境：使用直连模式 (无需代理)")
-    # GitHub 服务器在海外，天生能连 Google，不需要任何代理设置
+    print("🚀 检测到 GitHub Actions 环境：使用直连模式")
 else:
     print("🏠 检测到本地环境：开启 VPN 代理 (端口 7897)")
-    # 强制配置：流量走 7897 端口 (你的VPN端口)
     os.environ["HTTP_PROXY"] = "http://127.0.0.1:7897"
     os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7897"
     os.environ["GRPC_PROXY"] = "http://127.0.0.1:7897"
 
-# 强制 UTF-8 编码，防止中文乱码
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except AttributeError:
     pass
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-# 导入业务库
 try:
     import akshare as ak
     import pandas as pd
     import google.generativeai as genai
 except ImportError as e:
     print(f"❌ 缺少库: {e}")
-    print("请运行: pip install google-generativeai akshare pandas python-dotenv")
     sys.exit(1)
 
 # ==========================================
-# 1. 密钥配置
+# 1. 配置加载
 # ==========================================
 load_dotenv()
-# 获取 API Key (本地从 .env 读，GitHub 从 Secrets 读)
 MY_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not MY_API_KEY:
     print("❌ 严重错误: 未找到 GOOGLE_API_KEY")
-    print("1. 如果是本地，请检查 .env 文件。")
-    print("2. 如果是 GitHub，请检查 Settings -> Secrets -> Actions 是否添加了 Key。")
     sys.exit(1)
 
 genai.configure(api_key=MY_API_KEY)
 
+# ==========================================
+# 2. 核心赛道配置 (用户指定)
+# ==========================================
+SECTOR_MAPPING = {
+    '商业航天': '航天航空',
+    '工业金属': '工业金属',
+    '消费电子': '消费电子',
+    '通信设备': '通信设备',
+    '通用设备': '通用设备',
+    '半导体': '半导体',
+    '专用设备': '专用设备',
+    '化学制品': '化学制品',
+    '电池': '电池',
+    '电力': '电力行业',
+    '汽车零部件': '汽车零部件',
+    '小金属': '小金属'
+}
+
 
 # ==========================================
-# A. 获取数据 (包含商业航天 & AI)
+# A. 获取精准数据
 # ==========================================
 def get_market_data():
-    print("⏳ 正在采集沪深两市全景数据...")
+    print("⏳ 正在采集全景数据...")
     try:
         sh_index = ak.stock_zh_index_daily_em(symbol="sh000001")
         sz_index = ak.stock_zh_index_daily_em(symbol="sz399001")
 
-        # 简单计算成交额
-        amt = 0.0
-        if 'amount' in sh_index.columns:
-            amt = sh_index.iloc[-1]['amount'] + sz_index.iloc[-1]['amount']
-        elif '成交额' in sh_index.columns:
-            amt = sh_index.iloc[-1]['成交额'] + sz_index.iloc[-1]['成交额']
+        last_sh = sh_index.iloc[-1]
+        last_sz = sz_index.iloc[-1]
+
+        # 计算成交额 (亿)
+        try:
+            amt = last_sh['amount'] + last_sz['amount']
+        except:
+            amt = last_sh['成交额'] + last_sz['成交额']
 
         total_amount = amt / 100000000
 
-        # 获取板块
+        # 获取所有板块数据
         sector_df = ak.stock_board_industry_name_em()
 
-        # 筛选关键赛道
-        targets = ['航天航空', '通信设备', '互联网服务', '软件开发', '文化传媒', '游戏', '半导体']
-        sector_info = []
-
-        # 增加容错：检查列名是否存在
+        # 字段兼容处理
         name_col = '板块名称' if '板块名称' in sector_df.columns else 'name'
         change_col = '涨跌幅' if '涨跌幅' in sector_df.columns else 'change_pct'
 
+        # 筛选目标赛道
+        target_data = []
+        real_names = list(SECTOR_MAPPING.values())
+
         for index, row in sector_df.iterrows():
-            if row[name_col] in targets:
-                sector_info.append(f"{row[name_col]}: {row[change_col]}%")
+            if row[name_col] in real_names:
+                user_name = [k for k, v in SECTOR_MAPPING.items() if v == row[name_col]][0]
+                target_data.append(f"{user_name}({row[name_col]}): {row[change_col]}%")
 
-        today_date = sh_index.iloc[-1]['date'] if 'date' in sh_index.columns else datetime.date.today()
+        # 判断当前时间段
+        current_hour = datetime.datetime.now().hour + 8  # GitHub是UTC时间
+        if os.getenv("GITHUB_ACTIONS") != "true":
+            current_hour = datetime.datetime.now().hour
 
-        summary = f"""
-        日期: {today_date}
-        两市成交额: {total_amount:.0f} 亿元
-        重点板块表现: {" | ".join(sector_info)}
-        """
-        print(f"✅ 数据采集成功！今日成交额: {total_amount:.0f}亿")
+        report_type = "午盘复盘" if current_hour < 14 else "收盘复盘"
+
+        summary = {
+            "type": report_type,
+            "date": str(last_sh['date']),
+            "amount": f"{total_amount:.0f} 亿元",
+            "index_change": f"上证 {last_sh.get('change_pct', 0) if 'change_pct' in last_sh else 'N/A'}%",
+            "sectors": " | ".join(target_data)
+        }
+
+        print(f"✅ 数据采集成功！[{report_type}] 成交额: {total_amount:.0f}亿")
         return summary
+
     except Exception as e:
-        print(f"⚠️ 数据接口小故障: {e}")
-        return "数据异常，请假设成交额3万亿，AI与商业航天活跃。"
+        print(f"⚠️ 数据接口异常: {e}")
+        return {
+            "type": "数据异常模式",
+            "date": str(datetime.date.today()),
+            "amount": "接口获取失败",
+            "index_change": "未知",
+            "sectors": "需人工核对"
+        }
 
 
 # ==========================================
-# B. 生成策略 (使用你验证过的真实模型列表)
+# B. 生成深度策略
 # ==========================================
-def generate_report(market_data):
-    print("🤖 资深交易员正在思考...")
+def generate_report(data):
+    print("🤖 资深交易员正在深度复盘...")
 
+    # 根据时间段定制 Prompt
+    if "午盘" in data['type']:
+        time_logic = "重点分析上午的承接力度，量能是否足以支撑午后反攻？如有跳水，是机会还是风险？"
+        action_guide = "给出【午后】的具体操作：是开新仓、做T还是减仓防守？"
+    else:
+        time_logic = "重点分析全天资金流向，尾盘是否有抢筹或砸盘迹象？隔日溢价预期如何？"
+        action_guide = "给出【明日】的竞价关注点和核心操作策略。"
+
+    # 🟢 关键Prompt保持不变
     prompt = f"""
-    你是A股资深交易员。基于今日【{market_data}】的数据，
-    请写一份关于【商业航天】和【AI应用】的明日操作策略。
+    【角色设定】
+    你是一位拥有20年A股经验的资深游资操盤手，擅长情绪周期判断、题材轮动和龙头战法。你的风格是：语言犀利、逻辑严密、不说废话、只讲干货。
 
-    要求：
-    1. 分析今日行情风险。
-    2. 给出商业航天（卫星/低空）的低吸点位。
-    3. 给出AI应用（传媒/Agent）的博弈思路。
-    4. 输出Markdown格式，简练犀利。
+    【今日盘面数据】
+    - 复盘类型：{data['type']}
+    - 两市成交：{data['amount']} (量能是关键，判断是缩量还是放量)
+    - 核心赛道表现：
+    {data['sectors']}
+
+    【任务要求】
+    请基于上述数据，写一份深度的操盘内参。请严格按照以下 Markdown 格式输出：
+
+    # 🚀 {data['type']}：市场情绪与核心策略
+
+    ## I. 盘面核心逻辑拆解
+    * **量能定性**：当前成交额意味着什么？（主力出逃 vs 增量进场 vs 缩量洗盘）。
+    * **情绪风向**：赛道分化情况，资金是在进攻还是防守？{data['index_change']}。
+
+    ## II. 核心赛道深度扫描 (重点分析以下板块)
+    *请结合数据，挑选 2-3 个表现最亮眼或最异常的板块进行点评*
+    * **商业航天/卫星/低空**：(逻辑演绎及持续性判断)
+    * **科技主线 (半导体/消费电子/通信)**：(机构资金态度，是出货还是调仓？)
+    * **周期/新能源 (金属/电池/电力)**：(是否有轮动补涨机会？)
+
+    ## III. 交易员实战策略 ({action_guide})
+    * **仓位建议**：(例如：5成仓滚动 / 空仓观望 / 满仓博弈)
+    * **操作方向**：
+        * **进攻端**：如果看好，具体的低吸点位或打板逻辑是什么？
+        * **防守端**：什么信号出现必须止损或止盈？
+    * **核心博弈思路**：针对当前赛道列表，哪一个是明天的胜负手？
+
+    **注意：拒绝模棱两可的废话。像交易员一样思考，直接给出判断。**
     """
 
-    # 🟢 根据你 Debug 出来的真实可用模型列表
+    # 🟢 修改部分：更新为您账号实测可用的最强模型列表
     models_to_try = [
-        "gemini-2.0-flash",  # ✅ 正式版 (首选，最稳)
-        "gemini-2.5-flash",  # 🚀 超前版 (速度快)
-        "gemini-flash-latest",  # 🛡️ 官方推荐别名
-        "gemini-2.0-flash-exp",  # ⚠️ 实验版 (容易忙)
-        "gemini-2.5-pro"  # 🧠 推理版
+        "gemini-2.5-flash",  # 🚀 速度最快且新
+        "gemini-2.5-pro",  # 🧠 逻辑推理最强
+        "gemini-2.0-flash",  # ✅ 稳定版
+        "gemini-2.0-flash-exp"  # ⚠️ 备用
     ]
 
     for model_name in models_to_try:
         print(f"\n🔄 尝试模型: {model_name} ...")
-
-        # ⚡️ 重试机制：给每个模型 3 次机会
+        # 增加重试次数
         for attempt in range(1, 4):
             try:
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(prompt)
-
-                print(f"✅ 成功生成策略！(使用模型: {model_name})")
+                print(f"✅ 策略生成完毕！(使用模型: {model_name})")
                 return response.text
-
             except Exception as e:
                 err = str(e)
-                if "429" in err:  # 配额满了/太忙
-                    print(f"   ⚠️ 第{attempt}次尝试: 线路拥堵 (429)，休息5秒后重试...")
+                # 优化报错显示，不再静默失败
+                if "429" in err:
+                    print(f"   ⚠️ (尝试{attempt}) 太忙了(429)，休息5秒...")
                     time.sleep(5)
                 elif "404" in err:
-                    print(f"   ❌ 模型名称不对 (404)，跳过。")
-                    break  # 换下一个模型
+                    print(f"   ❌ 模型名 {model_name} 不对，跳过。")
+                    break
                 elif "403" in err:
-                    print(f"   ❌ 权限错误 (403): 请检查 API Key 是否有效或已泄露。")
+                    print(f"   ❌ 权限错误 (403): API Key 可能无效。")
                     break
                 else:
-                    print(f"   ❌ 其他报错: {err}")
-                    break
+                    print(f"   ❌ (尝试{attempt}) 报错: {err}")
+                    time.sleep(2)
 
-    print("\n😭 所有模型都试过了。")
-    return "😭 策略生成失败，请检查网络或 Key。"
+    return "😭 所有模型都失败了，请检查网络或 Key。"
 
 
 # ==========================================
-# 主程序入口
+# 主程序
 # ==========================================
 if __name__ == "__main__":
     data = get_market_data()
     report = generate_report(data)
 
     if "😭" not in report:
-        # 生成带日期的文件名
-        filename = f"Strategy_{datetime.date.today()}.md"
-        # 兼容 GitHub Actions 的路径写法（直接写在当前目录）
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H")
+        filename = f"Strategy_{timestamp}.md"
+
+        # 兼容 GitHub Actions，同时保存为 report.md 方便邮件发送
+        with open("report.md", "w", encoding="utf-8") as f:
+            f.write(report)
+
         with open(filename, "w", encoding="utf-8") as f:
             f.write(report)
+
         print(f"\n📂 报告已保存: {filename}")
         print("-" * 30)
-        # 简单预览
-        print(report[:300] + "...\n(详情请看生成的 Markdown 文件)")
+        print(report[:200] + "...")
     else:
-        # 如果失败，抛出异常以便 GitHub Actions 显示为红色失败状态
         print(report)
         sys.exit(1)
